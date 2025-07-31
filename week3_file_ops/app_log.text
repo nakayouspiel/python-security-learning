@@ -1,0 +1,8 @@
+[2025-07-31 10:00:01] INFO: Application started.
+[2025-07-31 10:00:05] WARNING: Disk space low on /dev/sda1 (10% remaining).
+[2025-07-31 10:00:10] INFO: User 'Alice' logged in from 192.168.1.10.
+[2025-07-31 10:00:15] ERROR: Database connection failed. Retrying...
+[2025-07-31 10:00:20] INFO: User 'Bob' logged in from 192.168.1.15.
+[2025-07-31 10:00:25] WARNING: High CPU usage (85%).
+[2025-07-31 10:00:30] ERROR: Unauthorized access attempt from 203.0.113.4.
+[2025-07-31 10:00:35] INFO: Application shut down.
