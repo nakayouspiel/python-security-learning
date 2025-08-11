@@ -5,7 +5,7 @@ a = Analysis(
     ['try_jpy_monitor.py'],
     pathex=[],
     binaries=[],
-    datas=[('C:\\Windows\\Fonts\\arial.ttf', '.')],
+    datas=[],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

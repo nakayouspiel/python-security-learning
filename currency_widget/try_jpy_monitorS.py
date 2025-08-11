@@ -6,7 +6,8 @@ import decimal
 import time
 import threading
 import tkinter as tk
-from tkinter import simpledialog
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 # 前日を基準に色を判断するため、前日の終値の1桁目を保存する箱
 # 今日の基準値を6として初期化
@@ -14,8 +15,8 @@ previous_day_baseline = 6
 # スレッドごとに独立したデータを保存する箱
 thread_data = threading.local()
 
-# 設定するパスワードを定義
-SECRET_PASSWORD = "1234"
+# 為替レートの履歴を保存するリスト
+rate_history = []
 
 # 為替レート取得と更新処理を行う関数
 def update_rate(icon):
@@ -54,6 +55,11 @@ def update_rate(icon):
                     if first_sen_digit != previous_day_baseline:
                         previous_day_baseline = first_sen_digit
                     
+                    # 💡 ここを修正しました: float型に変換
+                    rate_history.append(float(rounded_price))
+                    if len(rate_history) > 100:
+                        rate_history.pop(0)
+
                     thread_data.last_rate = rounded_price
                     icon.icon = create_image(str(rounded_price), fill_color)
                 else:
@@ -93,33 +99,41 @@ def create_image(text, fill_color=(0, 0, 0)):
     
     return image
 
+# グラフを表示する関数
+def show_graph(icon):
+    if not rate_history:
+        return
+    
+    root = tk.Tk()
+    root.title("為替レートグラフ")
+    # 💡 ウィンドウを閉じる際に呼ばれる関数を設定
+    root.protocol("WM_DELETE_WINDOW", root.destroy)
+
+    fig = Figure(figsize=(5, 4), dpi=100)
+    ax = fig.add_subplot(111)
+    ax.plot(rate_history)
+    ax.set_title("TRY/JPY 為替レート変動")
+    ax.set_xlabel("更新回数")
+    ax.set_ylabel("為替レート")
+
+    canvas = FigureCanvasTkAgg(fig, master=root)
+    canvas.draw()
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+
+    root.mainloop()
+
 # 終了処理用の関数
 def on_quit(icon):
     icon.stop()
 
-# 起動時のパスワード認証を行う関数
-def authenticate_on_startup():
-    # Tkinterのルートウィンドウを作成し、非表示にする
-    root = tk.Tk()
-    root.withdraw()
-
-    # パスワード入力ダイアログを表示
-    password = simpledialog.askstring("パスワード入力", "アプリケーションを開始するにはパスワードを入力してください:", show='*')
-
-    return password == SECRET_PASSWORD
-
-# メイン処理
+# アイコンの作成と実行
 if __name__ == '__main__':
-    if authenticate_on_startup():
-        icon_image = create_image("0.000")
-        menu = (pystray.MenuItem('終了', on_quit),)
-        icon = pystray.Icon("exchange_rate_tray", icon_image, "為替レート", menu)
-        
-        thread = threading.Thread(target=update_rate, args=(icon,))
-        thread.daemon = True
-        thread.start()
-        
-        icon.run()
-    else:
-        # パスワードが間違っている場合、アプリケーションを終了
-        print("パスワードが違います。アプリケーションを終了します。")
+    icon_image = create_image("0.000")
+    menu = (pystray.MenuItem('グラフ表示', show_graph), pystray.MenuItem('終了', on_quit))
+    icon = pystray.Icon("exchange_rate_tray", icon_image, "為替レート", menu)
+    
+    thread = threading.Thread(target=update_rate, args=(icon,))
+    thread.daemon = True
+    thread.start()
+    
+    icon.run()
