@@ -4,20 +4,20 @@ import requests
 import json
 import decimal
 import time
-import threading
+import threading 
+from threading import Event
 
 # 前日を基準に色を判断するため、前日の終値の1桁目を保存する箱
 # 今日の基準値を6として初期化
 previous_day_baseline = 6
-# スレッドごとに独立したデータを保存する箱
-thread_data = threading.local()
+
 
 # 為替レート取得と更新処理を行う関数
-def update_rate(icon):
+def update_rate(icon, stop_event):
     global previous_day_baseline # グローバル変数として扱うことを宣言
     thread_data.last_rate = None
     
-    while True:
+    while  not stop_event.is_set():
         API_ENDPOINT = "https://forex-api.coin.z.com/public"
         PATH = "/v1/ticker"
         
@@ -96,16 +96,18 @@ def create_image(text, fill_color=(0, 0, 0)):
     return image
 
 # 終了処理用の関数
-def on_quit(icon):
+def on_quit(icon,stop_event):
+    stop_event.set()
     icon.stop()
 
 # アイコンの作成と実行
 if __name__ == '__main__':
     icon_image = create_image("0.000")
-    menu = (pystray.MenuItem('終了', on_quit),)
+    menu = (pystray.MenuItem('終了',lambda icon: on_quit(icon,stop_event)),)
     icon = pystray.Icon("exchange_rate_tray", icon_image, "為替レート", menu)
     
-    thread = threading.Thread(target=update_rate, args=(icon,))
+    stop_event = Event()
+    thread = threading.Thread(target=update_rate, args=(icon,stop_event))
     thread.daemon = True
     thread.start()
     
