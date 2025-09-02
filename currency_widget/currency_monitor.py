@@ -1,24 +1,3 @@
-"""
-# トルコリラ/円 為替レート監視ツール
-
-## 概要
-このスクリプトは、PCのタスクトレイに常駐し、トルコリラ/円TRY/JPYの為替レート変動をリアルタイムで監視するツールです。
-
-## 主な機能
-1.  **基準価格の自動/手動設定**
-    * **起動時**: 前日の終値を手動で入力することで、その日の基準価格を設定できます。
-    * **日足切り替わり時**: 日付が変わると自動的に基準価格がリセットされ、その日の最初の価格を新しい基準として更新します。
-2.  **複数の表示モード**
-    * 「小数点2,3桁」「小数点1,2桁」では、基準価格からの差額を表示します。
-    * 「現在値（銭）」では、現在の価格そのものを分かりやすく表示します。
-3.  **タスクスケジューラとの連携**
-    * PCの電源設定と連携し、タスクスケジューラで日足確定時刻にPCを自動起動させることで、効率的な運用が可能です。
-
-## 注意事項
-* 手動で基準価格を入力しない場合、その日の最初の価格が自動で基準となります。
-* このツールには、PCを自動でスリープさせる機能は含まれていません。
-"""
-
 import pystray
 from PIL import Image, ImageDraw, ImageFont
 import requests
@@ -30,15 +9,19 @@ from threading import Event
 from datetime import datetime
 import tkinter as tk
 from tkinter import simpledialog
+import os
+import sys
 
 # Googleスプレッドシート連携のためのライブラリをインポート
 import gspread
 from google.oauth2 import service_account
 
-# プログラムの先頭に追加
 # 表示モードを管理するグローバル変数
 # 0: 小数点以下2,3桁, 1: 小数点以下1,2桁, 2: 現在値（銭）
 display_mode = 0
+
+# 選択された通貨を管理するグローバル変数
+selected_currency = "TRY_JPY"
 
 # 日付が変わるたびに、その日の最初の価格が自動的にここに設定されます。
 previous_day_baseline = decimal.Decimal('0')
@@ -52,29 +35,50 @@ def set_display_mode(icon, item):
     mode = ["Difference (Cents)", "Difference (Yen)", "Current Price"].index(item.text)
     display_mode = mode
 
+def set_currency(icon, item):
+    global selected_currency
+    global previous_day_baseline
+    
+    if item.text == "TRY/JPY":
+        selected_currency = "TRY_JPY"
+    elif item.text == "USD/JPY":
+        selected_currency = "USD_JPY"
+    
+    previous_day_baseline = decimal.Decimal('0')
+    get_initial_baseline_from_gsheet()
+
 # 手動入力を置き換え、Googleスプレッドシートから基準値を取得する関数
 def get_initial_baseline_from_gsheet():
     global previous_day_baseline
     
     # スプレッドシートを認証するための設定
     try:
-        # 'YOUR_CREDENTIALS.json'をあなたのファイル名に書き換えてください
+        # PyInstallerで実行されているかを確認し、ファイルのパスを適切に設定する
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            # PyInstallerで実行されている場合
+            base_path = sys._MEIPASS
+        else:
+            # スクリプトとして直接実行されている場合
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            
+        credentials_path = os.path.join(base_path, 'currency-monitor-tool-7e3d63d0ebf0.json')
+
         creds = service_account.Credentials.from_service_account_file(
-<<<<<<< HEAD
-            'currency-monitor-tool-34f7ca7bcf2f.json', 
-            scopes=['https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/drive.readonly'])
-=======
-    'currency-monitor-tool-7e3d63d0ebf0.json',
+    credentials_path,
     scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
->>>>>>> fb1baf22683b479bcf9c3a9a4a1eeb7f13267c88
         gc = gspread.authorize(creds)
         
         # 'currency-monitor-data'をあなたのスプレッドシートの名前に書き換えてください
         sh = gc.open('currency-monitor-data')
         worksheet = sh.worksheet("シート1") # 1つ目のシートを取得
         
-        # A1セルの値を取得
-        yesterday_close = worksheet.acell('B2').value
+        # 選択された通貨に応じてセルから値を取得
+        if selected_currency == "TRY_JPY":
+            cell_to_get = 'B2'
+        elif selected_currency == "USD_JPY":
+            cell_to_get = 'B4'
+        
+        yesterday_close = worksheet.acell(cell_to_get).value
         
         if yesterday_close:
             previous_day_baseline = decimal.Decimal(yesterday_close).quantize(decimal.Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)
@@ -90,6 +94,7 @@ def update_rate(icon, stop_event):
     global previous_day_baseline
     global display_mode
     global last_update_date
+    global selected_currency
 
     API_ENDPOINT = "https://forex-api.coin.z.com/public"
     PATH = "/v1/ticker"
@@ -101,14 +106,15 @@ def update_rate(icon, stop_event):
             api_data = response.json()
             if api_data["status"] == 0:
                 all_tickers = api_data["data"]
-                try_jpy_info = None
+                
+                selected_info = None
                 for ticker in all_tickers:
-                    if ticker["symbol"] == "TRY_JPY":
-                        try_jpy_info = ticker
+                    if ticker["symbol"] == selected_currency:
+                        selected_info = ticker
                         break
                 
-                if try_jpy_info:
-                    current_date_str = try_jpy_info["timestamp"].split('T')[0]
+                if selected_info:
+                    current_date_str = selected_info["timestamp"].split('T')[0]
                     current_date = datetime.strptime(current_date_str, '%Y-%m-%d').date()
                     
                     if last_update_date is None:
@@ -118,40 +124,50 @@ def update_rate(icon, stop_event):
                         last_update_date = current_date
                         previous_day_baseline = decimal.Decimal('0')
                     
-                    bid_price_decimal = decimal.Decimal(try_jpy_info["bid"])
+                    bid_price_decimal = decimal.Decimal(selected_info["bid"])
                     
                     if previous_day_baseline == decimal.Decimal('0'):
                         previous_day_baseline = bid_price_decimal.quantize(decimal.Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)
 
                     main_digits = ""
                     difference = decimal.Decimal('0')
+
+                    fill_color = (0, 0, 0)
+                    if difference > 0:
+                        fill_color = (255, 0, 0)
+                    elif difference < 0:
+                        fill_color = (0, 0, 255)
                     
                     if display_mode == 2:
                         rounded_price = bid_price_decimal.quantize(decimal.Decimal('0.1'), rounding=decimal.ROUND_HALF_UP)
                         main_digits = str(int(rounded_price * 10))
                         fill_color = (0, 0, 0)
-                    else:
+                    
+                    else: # display_modeが0か1の場合
                         difference = bid_price_decimal - previous_day_baseline
                         
+                        # 色の判定を先に行う
+                        fill_color = (0, 0, 0)
+                        if difference > 0:
+                            fill_color = (255, 0, 0) # 赤
+                        elif difference < 0:
+                            fill_color = (0, 0, 255) # 青
+                        
+                        # 判定後、表示用の文字列を作成
                         if display_mode == 0:
-                            rounded_diff = difference.quantize(decimal.Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)
+                            rounded_diff = abs(difference).quantize(decimal.Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)
                             main_digits = str(int(rounded_diff * 1000))
                         elif display_mode == 1:
-                            rounded_diff = difference.quantize(decimal.Decimal('0.01'), rounding=decimal.ROUND_HALF_UP)
+                            rounded_diff = abs(difference).quantize(decimal.Decimal('0.01'), rounding=decimal.ROUND_HALF_UP)
                             main_digits = str(int(rounded_diff * 100))
-
+                        
                         if main_digits == "0":
                             main_digits = "0"
                             difference = decimal.Decimal('0')
-                        elif main_digits.startswith('-'):
-                            main_digits = main_digits.lstrip('-')
-                            difference = -difference
-                    
-                        fill_color = (0, 0, 0)
-                        if difference > 0:
-                            fill_color = (255, 0, 0)
-                        elif difference < 0:
-                            fill_color = (173, 216, 230)
+
+                        icon.icon = create_image(main_digits, fill_color)        
+                        
+                        
                     
                     icon.icon = create_image(main_digits, fill_color)
                 else:
@@ -201,26 +217,27 @@ if __name__ == '__main__':
 
     icon_image = create_image("0")
     stop_event = Event()
+    
     menu = pystray.Menu(
         pystray.MenuItem(
-            "Difference (Cents)",
-            lambda icon, item: set_display_mode(icon, item),
-            checked=lambda item: display_mode == 0
+            "Display Mode",
+            pystray.Menu(
+                pystray.MenuItem("Difference (Cents)", lambda icon, item: set_display_mode(icon, item), checked=lambda item: display_mode == 0),
+                pystray.MenuItem("Difference (Yen)", lambda icon, item: set_display_mode(icon, item), checked=lambda item: display_mode == 1),
+                pystray.MenuItem("Current Price", lambda icon, item: set_display_mode(icon, item), checked=lambda item: display_mode == 2)
+            )
         ),
         pystray.MenuItem(
-            "Difference (Yen)",
-            lambda icon, item: set_display_mode(icon, item),
-            checked=lambda item: display_mode == 1
-        ),
-        pystray.MenuItem(
-            "Current Price",
-            lambda icon, item: set_display_mode(icon, item),
-            checked=lambda item: display_mode == 2
+            "Currency",
+            pystray.Menu(
+                pystray.MenuItem("TRY/JPY", lambda icon, item: set_currency(icon, item), checked=lambda item: selected_currency == "TRY_JPY"),
+                pystray.MenuItem("USD/JPY", lambda icon, item: set_currency(icon, item), checked=lambda item: selected_currency == "USD_JPY")
+            )
         ),
         pystray.MenuItem('Exit', lambda icon: on_quit(icon, stop_event))
     )
     
-    icon = pystray.Icon("exchange_rate_tray", icon_image, "為替レート", menu)
+    icon = pystray.Icon("exchange_rate_tray", icon_image, "currency", menu)
     
     thread = threading.Thread(target=update_rate, args=(icon, stop_event))
     thread.daemon = True
