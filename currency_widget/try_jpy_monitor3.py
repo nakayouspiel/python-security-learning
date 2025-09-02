@@ -19,8 +19,6 @@
 * このツールには、PCを自動でスリープさせる機能は含まれていません。
 """
 
-
-
 import pystray
 from PIL import Image, ImageDraw, ImageFont
 import requests
@@ -32,6 +30,10 @@ from threading import Event
 from datetime import datetime
 import tkinter as tk
 from tkinter import simpledialog
+
+# Googleスプレッドシート連携のためのライブラリをインポート
+import gspread
+from google.oauth2 import service_account
 
 # プログラムの先頭に追加
 # 表示モードを管理するグローバル変数
@@ -50,21 +52,33 @@ def set_display_mode(icon, item):
     mode = ["小数点２，３", "小数点１，２", "現在値（銭）"].index(item.text)
     display_mode = mode
 
-# 手動で基準値を入力する関数
-def initial_baseline_input():
+# 手動入力を置き換え、Googleスプレッドシートから基準値を取得する関数
+def get_initial_baseline_from_gsheet():
     global previous_day_baseline
     
-    root = tk.Tk()
-    root.withdraw()
-    
-    user_input = simpledialog.askstring("基準価格の入力", "前日の終値（基準価格）を入力してください。\n例: 3.620", parent=root)
-    
+    # スプレッドシートを認証するための設定
     try:
-        if user_input:
-            previous_day_baseline = decimal.Decimal(user_input).quantize(decimal.Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)
-            print(f"基準価格を手動で {previous_day_baseline} に設定しました。")
-    except (ValueError, decimal.InvalidOperation):
-        print("無効な入力です。基準価格は自動で設定されます。")
+        # 'YOUR_CREDENTIALS.json'をあなたのファイル名に書き換えてください
+        creds = service_account.Credentials.from_service_account_file(
+            'currency-monitor-tool-34f7ca7bcf2f.json', 
+            scopes=['https://www.googleapis.com/auth/spreadsheets','https://www.googleapis.com/auth/drive.readonly'])
+        gc = gspread.authorize(creds)
+        
+        # 'currency-monitor-data'をあなたのスプレッドシートの名前に書き換えてください
+        sh = gc.open('currency-monitor-data')
+        worksheet = sh.worksheet("シート1") # 1つ目のシートを取得
+        
+        # A1セルの値を取得
+        yesterday_close = worksheet.acell('B2').value
+        
+        if yesterday_close:
+            previous_day_baseline = decimal.Decimal(yesterday_close).quantize(decimal.Decimal('0.001'), rounding=decimal.ROUND_HALF_UP)
+            print(f"基準価格をGoogleスプレッドシートから {previous_day_baseline} に設定しました。")
+        else:
+            print("Googleスプレッドシートから終値を取得できませんでした。")
+    except Exception as e:
+        print(f"Googleスプレッドシートからのデータ取得に失敗しました: {e}")
+        print("基準価格は自動で設定されます。")
 
 # 為替レート取得と更新処理を行う関数
 def update_rate(icon, stop_event):
@@ -178,7 +192,7 @@ def on_quit(icon, stop_event):
 
 # アイコンの作成と実行
 if __name__ == '__main__':
-    initial_baseline_input()
+    get_initial_baseline_from_gsheet()
 
     icon_image = create_image("0")
     stop_event = Event()
